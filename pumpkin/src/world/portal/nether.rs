@@ -7,7 +7,9 @@ use pumpkin_data::{
     tag,
     tag::Taggable,
 };
-use pumpkin_util::math::{boundingbox::EntityDimensions, position::BlockPos, vector3::Vector3};
+use pumpkin_util::math::{
+    boundingbox::EntityDimensions, position::BlockPos, vector2::Vector2, vector3::Vector3,
+};
 use pumpkin_world::{chunk::ChunkHeightmapType, world::BlockFlags};
 
 use crate::world::World;
@@ -504,8 +506,27 @@ impl NetherPortal {
                 continue;
             }
 
+            // Pre-load the chunk at the POI position so sync block reads work
+            let chunk_pos = pos.chunk_position();
+            world.level.get_or_fetch_chunk(chunk_pos, |_| ()).await;
+
             if world.get_block(&pos) != &Block::NETHER_PORTAL {
                 continue;
+            }
+
+            // Pre-load surrounding chunks so get_on_axis can read frame blocks
+            for dx in -1..=1_i32 {
+                for dz in -1..=1_i32 {
+                    if dx != 0 || dz != 0 {
+                        world
+                            .level
+                            .get_or_fetch_chunk(
+                                Vector2::new(chunk_pos.x + dx, chunk_pos.y + dz),
+                                |_| (),
+                            )
+                            .await;
+                    }
+                }
             }
 
             for axis in [HorizontalAxis::X, HorizontalAxis::Z] {

@@ -1974,6 +1974,8 @@ impl Entity {
                 let yaw_delta = new_yaw.map(|y| y - current_yaw);
                 Self::teleport_passengers_recursive(self, teleport_pos, yaw_delta, &dest_world)
                     .await;
+
+                should_remove = true;
             } else if portal_manager.ticks_in_portal == 0 {
                 should_remove = true;
             }
