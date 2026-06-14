@@ -2999,60 +2999,61 @@ impl World {
         };
 
         // Get respawn position and dimension
-        let (position, yaw, pitch, respawn_dimension) =
-            if let Some(respawn) = player.calculate_respawn_point().await {
-                (
-                    respawn.position,
-                    respawn.yaw,
-                    respawn.pitch,
-                    respawn.dimension,
-                )
+        let (position, yaw, pitch, respawn_dimension) = if let Some(respawn) =
+            player.calculate_respawn_point().await
+        {
+            (
+                respawn.position,
+                respawn.yaw,
+                respawn.pitch,
+                respawn.dimension,
+            )
+        } else {
+            // No valid respawn point - send notification and use world spawn
+            player
+                .client
+                .send_packet_now(&CGameEvent::new(GameEvent::NoRespawnBlockAvailable, 0.0))
+                .await;
+
+            // In vanilla, dying without a bed/anchor always respawns in the
+            // overworld, regardless of which dimension the player died in.
+            let respawn_dim = if self.dimension == Dimension::OVERWORLD {
+                self.dimension.clone()
             } else {
-                // No valid respawn point - send notification and use world spawn
-                player
-                    .client
-                    .send_packet_now(&CGameEvent::new(GameEvent::NoRespawnBlockAvailable, 0.0))
-                    .await;
+                Dimension::OVERWORLD.clone()
+            };
 
-                // In vanilla, dying without a bed/anchor always respawns in the
-                // overworld, regardless of which dimension the player died in.
-                let respawn_dim = if self.dimension == Dimension::OVERWORLD {
-                    self.dimension.clone()
-                } else {
-                    Dimension::OVERWORLD.clone()
-                };
-
-                // Use the overworld's spawn info when cross-dimension respawning.
-                let (rsp_x, rsp_z, rsp_yaw, rsp_pitch) = if respawn_dim != self.dimension {
-                    if let Some(server) = self.server.upgrade() {
+            // Use the overworld's spawn info when cross-dimension respawning.
+            let (rsp_x, rsp_z, rsp_yaw, rsp_pitch) = if self.dimension == Dimension::OVERWORLD {
+                (spawn_x, spawn_z, spawn_yaw, spawn_pitch)
+            } else {
+                self.server
+                    .upgrade()
+                    .map_or((spawn_x, spawn_z, spawn_yaw, spawn_pitch), |server| {
                         let ow = server.get_world_from_dimension(&Dimension::OVERWORLD);
                         let info = ow.level_info.load();
                         (info.spawn_x, info.spawn_z, info.spawn_yaw, info.spawn_pitch)
-                    } else {
-                        (spawn_x, spawn_z, spawn_yaw, spawn_pitch)
-                    }
-                } else {
-                    (spawn_x, spawn_z, spawn_yaw, spawn_pitch)
-                };
-
-                // FIXME: This spawn position calculation is incorrect. Should use vanilla's
-                // proper spawn position calculation (see #1381). The y-level calculation
-                // needs to account for spawn radius and find a safe spawn position.
-                let chunk_pos = Vector2::new(rsp_x >> 4, rsp_z >> 4);
-                self.level.get_or_fetch_chunk(chunk_pos, |_| ()).await;
-                let top = self.get_top_block(Vector2::new(rsp_x, rsp_z));
-
-                (
-                    Vector3::new(
-                        f64::from(rsp_x) + 0.5,
-                        (top + 1).into(),
-                        f64::from(rsp_z) + 0.5,
-                    ),
-                    rsp_yaw,
-                    rsp_pitch,
-                    respawn_dim,
-                )
+                    })
             };
+
+            // FIXME: This spawn position calculation is incorrect. Should use vanilla's
+            // proper spawn position calculation (see #1381). The y-level calculation
+            // needs to account for spawn radius and find a safe spawn position.
+            let chunk_pos = Vector2::new(rsp_x >> 4, rsp_z >> 4);
+            self.level.get_or_fetch_chunk(chunk_pos, |_| ()).await;
+            let top = self.get_top_block(Vector2::new(rsp_x, rsp_z));
+
+            (
+                Vector3::new(
+                    f64::from(rsp_x) + 0.5,
+                    (top + 1).into(),
+                    f64::from(rsp_z) + 0.5,
+                ),
+                rsp_yaw,
+                rsp_pitch,
+                respawn_dim,
+            )
+        };
 
         // Get target world (may be different from current world for cross-dimension respawn)
         let target_world = if respawn_dimension == self.dimension {
