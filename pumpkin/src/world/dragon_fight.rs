@@ -138,7 +138,10 @@ impl DragonFight {
         // (returning AIR everywhere), spawns a dragon whose pathfinding nodes
         // are all at min-y, and the resulting per-tick work + mutex contention
         // pins the CPU at 200%+.
-        if !world.level.is_chunk_loaded(&pumpkin_util::math::vector2::Vector2::new(0, 0)) {
+        if !world
+            .level
+            .is_chunk_loaded(&pumpkin_util::math::vector2::Vector2::new(0, 0))
+        {
             return;
         }
 
