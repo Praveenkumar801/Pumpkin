@@ -3014,22 +3014,43 @@ impl World {
                     .send_packet_now(&CGameEvent::new(GameEvent::NoRespawnBlockAvailable, 0.0))
                     .await;
 
+                // In vanilla, dying without a bed/anchor always respawns in the
+                // overworld, regardless of which dimension the player died in.
+                let respawn_dim = if self.dimension == Dimension::OVERWORLD {
+                    self.dimension.clone()
+                } else {
+                    Dimension::OVERWORLD.clone()
+                };
+
+                // Use the overworld's spawn info when cross-dimension respawning.
+                let (rsp_x, rsp_z, rsp_yaw, rsp_pitch) = if respawn_dim != self.dimension {
+                    if let Some(server) = self.server.upgrade() {
+                        let ow = server.get_world_from_dimension(&Dimension::OVERWORLD);
+                        let info = ow.level_info.load();
+                        (info.spawn_x, info.spawn_z, info.spawn_yaw, info.spawn_pitch)
+                    } else {
+                        (spawn_x, spawn_z, spawn_yaw, spawn_pitch)
+                    }
+                } else {
+                    (spawn_x, spawn_z, spawn_yaw, spawn_pitch)
+                };
+
                 // FIXME: This spawn position calculation is incorrect. Should use vanilla's
                 // proper spawn position calculation (see #1381). The y-level calculation
                 // needs to account for spawn radius and find a safe spawn position.
-                let chunk_pos = Vector2::new(spawn_x >> 4, spawn_z >> 4);
+                let chunk_pos = Vector2::new(rsp_x >> 4, rsp_z >> 4);
                 self.level.get_or_fetch_chunk(chunk_pos, |_| ()).await;
-                let top = self.get_top_block(Vector2::new(spawn_x, spawn_z));
+                let top = self.get_top_block(Vector2::new(rsp_x, rsp_z));
 
                 (
                     Vector3::new(
-                        f64::from(spawn_x) + 0.5,
+                        f64::from(rsp_x) + 0.5,
                         (top + 1).into(),
-                        f64::from(spawn_z) + 0.5,
+                        f64::from(rsp_z) + 0.5,
                     ),
-                    spawn_yaw,
-                    spawn_pitch,
-                    self.dimension.clone(),
+                    rsp_yaw,
+                    rsp_pitch,
+                    respawn_dim,
                 )
             };
 

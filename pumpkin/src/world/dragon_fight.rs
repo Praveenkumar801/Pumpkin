@@ -133,6 +133,15 @@ impl DragonFight {
     // ── Main tick ─────────────────────────────────────────────────────────────
 
     pub async fn tick(fight_mutex: &Mutex<Self>, world: &Arc<World>) {
+        // Don't run the dragon fight until the spawn chunks around the origin
+        // are loaded.  Without this guard the fight scans unloaded chunks
+        // (returning AIR everywhere), spawns a dragon whose pathfinding nodes
+        // are all at min-y, and the resulting per-tick work + mutex contention
+        // pins the CPU at 200%+.
+        if !world.level.is_chunk_loaded(&pumpkin_util::math::vector2::Vector2::new(0, 0)) {
+            return;
+        }
+
         let (
             ticks_since_last_player_scan,
             needs_state_scanning,
